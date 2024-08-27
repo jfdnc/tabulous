@@ -6,5 +6,5 @@ For the script itself:
 
 ```bash
 $ sudo chmod +x main.sh
-$ ./main.sh <some binary>
+$ sudo ./main.sh <some binary>
 ```
