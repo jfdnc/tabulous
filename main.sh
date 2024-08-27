@@ -3,7 +3,8 @@
 # Usage: tabulous <bin>
 BIN="$1"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-LOGFILE="./logs/tabulous_log_$TIMESTAMP.txt"
+LOGDIR="./logs"
+LOGFILE="$LOGDIR/tabulous_log_$TIMESTAMP.txt"
 COMPLETION_DIR="/etc/bash_completion.d"
 COMPLETION_FILE="$COMPLETION_DIR/tabulous_$BIN.sh"
 
@@ -11,6 +12,12 @@ COMPLETION_FILE="$COMPLETION_DIR/tabulous_$BIN.sh"
 if [ -z "$BIN" ]; then
     echo "Usage: tabulous <bin>"
     exit 1
+fi
+
+# Ensure the logging directory exists
+if [ ! -d "$LOGDIR" ]; then
+    echo "Creating logs directory at $LOGDIR"
+    sudo mkdir -p "$LOGDIR"
 fi
 
 # Ensure the bash completion directory exists
