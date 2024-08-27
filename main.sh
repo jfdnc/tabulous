@@ -3,7 +3,7 @@
 # Usage: tabulous <bin>
 BIN="$1"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-LOGFILE="tabulous_log_$TIMESTAMP.txt"
+LOGFILE="./logs/tabulous_log_$TIMESTAMP.txt"
 COMPLETION_DIR="/etc/bash_completion.d"
 COMPLETION_FILE="$COMPLETION_DIR/tabulous_$BIN.sh"
 
@@ -19,58 +19,6 @@ if [ ! -d "$COMPLETION_DIR" ]; then
     sudo mkdir -p "$COMPLETION_DIR"
 fi
 
-# Function to query LLM and process command
-query_llm() {
-    local prompt="$1"
-    echo "Querying LLM with prompt: $prompt"
-    LLM_RESPONSE=$(llm "$prompt")
-}
-
-# Function to extract commands and options from LLM response
-extract_commands_and_options() {
-    local response="$1"
-    local commands=$(echo "$response" | sed -n 's/.*"commands": \[\([^]]*\)\].*/\1/p' | sed 's/"//g' | tr ',' ' ')
-    local options=$(echo "$response" | sed -n 's/.*"options": \[\([^]]*\)\].*/\1/p' | sed 's/"//g' | tr ',' ' ')
-    echo "$commands" "$options"
-}
-
-# Recursive function to process commands and options
-process_command() {
-    local cmd="$1"
-    local parent_cmd="$2"
-    
-    echo "Processing command: $cmd"
-
-    # Query LLM for nested commands and options
-    local prompt="Given the following --help output from the $cmd command:\n$($cmd --help 2>&1)\nPlease respond with a structured JSON-like format where 'commands' is a list of available sub-commands and 'options' is a list of available options. Format: {\"commands\": [\"command1\", \"command2\"], \"options\": [\"--option1\", \"--option2\"]}. Please do not wrap the json-styled response in any backticks or other characters."
-    query_llm "$prompt"
-
-    # Extract commands and options
-    local result=$(extract_commands_and_options "$LLM_RESPONSE")
-    local commands=$(echo "$result" | awk '{print $1}')
-    local options=$(echo "$result" | awk '{print $2}')
-
-    # Append commands and options to completion
-    if [ -n "$commands" ]; then
-        echo "Nested commands: $commands"
-        for sub_cmd in $commands; do
-            if [[ ! " ${PROCESSED_COMMANDS[@]} " =~ " ${sub_cmd} " ]]; then
-                PROCESSED_COMMANDS+=("$sub_cmd")
-                process_command "$sub_cmd" "$cmd"
-            fi
-        done
-    fi
-
-    if [ -n "$options" ]; then
-        echo "Nested options: $options"
-        ALL_OPTIONS+="$options "
-    fi
-}
-
-# Initialize
-PROCESSED_COMMANDS=()
-ALL_OPTIONS=""
-
 # Get the help output from the binary
 HELP_OUTPUT=$($BIN --help 2>&1)
 
@@ -81,21 +29,28 @@ if [ -z "$HELP_OUTPUT" ]; then
 fi
 
 # Enhanced prompt to the LLM
-LLM_PROMPT="Given the following --help output from the $BIN command:\n$HELP_OUTPUT\nPlease respond with a structured JSON-like format where 'commands' is a list of available sub-commands and 'options' is a list of available options. Format: {\"commands\": [\"command1\", \"command2\"], \"options\": [\"--option1\", \"--option2\"]}. Please do not wrap the json-styled response in any backticks or other characters."
-query_llm "$LLM_PROMPT"
+LLM_PROMPT="Given the following --help output from the $BIN command:\n$HELP_OUTPUT\nPlease respond with a structured JSON-like format where 'commands' is a list of available sub-commands and 'options' is a list of available options. Format: {\"commands\": [\"command1\", \"command2\"], \"options\": [\"--option1\", \"--option2\"]}. Please do not wrap the json-styled response in any backticks or other characters, I'm going to parse it as a raw string."
+LLM_RESPONSE=$(llm "$LLM_PROMPT")
 
-# Extract initial commands and options
-result=$(extract_commands_and_options "$LLM_RESPONSE")
-initial_commands=$(echo "$result" | awk '{print $1}')
-initial_options=$(echo "$result" | awk '{print $2}')
+# Log the LLM response to a timestamped file
+echo "Command: $BIN" >> "$LOGFILE"
+echo "Help Output:" >> "$LOGFILE"
+echo "$HELP_OUTPUT" >> "$LOGFILE"
+echo "LLM Response:" >> "$LOGFILE"
+echo "$LLM_RESPONSE" >> "$LOGFILE"
+echo "------------------------------------" >> "$LOGFILE"
 
-# Process initial commands
-for cmd in $initial_commands; do
-    if [[ ! " ${PROCESSED_COMMANDS[@]} " =~ " ${cmd} " ]]; then
-        PROCESSED_COMMANDS+=("$cmd")
-        process_command "$cmd" ""
-    fi
-done
+# Extract the commands
+COMMANDS=$(echo "$LLM_RESPONSE" | sed -n 's/.*"commands": \[\([^]]*\)\].*/\1/p' | sed 's/"//g' | tr ',' ' ')
+
+# Extract the options
+OPTIONS=$(echo "$LLM_RESPONSE" | sed -n 's/.*"options": \[\([^]]*\)\].*/\1/p' | sed 's/"//g' | tr ',' ' ')
+
+
+echo "Commands:" >> "$LOGFILE"
+echo "$COMMANDS" >> "$LOGFILE"
+echo "Options:" >> "$LOGFILE"
+echo "$OPTIONS" >> "$LOGFILE"
 
 # Generate the Bash completion function without external dependencies
 COMPLETION_FUNC="_${BIN}_completion() {
@@ -105,11 +60,11 @@ COMPLETION_FUNC="_${BIN}_completion() {
 
     case \"\${prev}\" in
         $BIN)
-            COMPREPLY=( \$(compgen -W \"${initial_commands}\" -- \"\${cur}\") )
+            COMPREPLY=( \$(compgen -W \"${COMMANDS}\" -- \"\${cur}\") )
             return 0
             ;;
         *)
-            COMPREPLY=( \$(compgen -W \"${ALL_OPTIONS}\" -- \"\${cur}\") )
+            COMPREPLY=( \$(compgen -W \"${OPTIONS}\" -- \"\${cur}\") )
             return 0
             ;;
     esac
